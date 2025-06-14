@@ -10,6 +10,7 @@ func main() {
 	}
 
 	mux.Handle("/", http.FileServer(http.Dir(".")))
+	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
 
 	srv.ListenAndServe()
 }
