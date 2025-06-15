@@ -48,7 +48,7 @@ func (cfg *apiConfig) resetMetricsHandler(w http.ResponseWriter, r *http.Request
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	cfg.fileserverHits.Add(1)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
 		cfg.fileserverHits.Add(1)
+		next.ServeHTTP(w, r)
 	})
 }
