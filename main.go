@@ -21,9 +21,9 @@ func main() {
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(fileServerHandler))
 	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
-	mux.HandleFunc("/healthz", readinessHandler)
-	mux.HandleFunc("/metrics", apiCfg.writeNumberOfRequestHandler)
-	mux.HandleFunc("/reset", apiCfg.resetMetricsHandler)
+	mux.HandleFunc("GET /healthz", readinessHandler)
+	mux.HandleFunc("GET /metrics", apiCfg.writeNumberOfRequestHandler)
+	mux.HandleFunc("POST /reset", apiCfg.resetMetricsHandler)
 
 	srv.ListenAndServe()
 }
@@ -35,7 +35,6 @@ func readinessHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) writeNumberOfRequestHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("handler hit: %v\n", cfg.fileserverHits.Load())
 	w.Write(fmt.Appendf(nil, "Hits: %v", cfg.fileserverHits.Load()))
 	w.WriteHeader(200)
 }
