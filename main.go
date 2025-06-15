@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync/atomic"
@@ -21,9 +22,10 @@ func main() {
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(fileServerHandler))
 	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
-	mux.HandleFunc("GET /healthz", readinessHandler)
-	mux.HandleFunc("GET /metrics", apiCfg.writeNumberOfRequestHandler)
-	mux.HandleFunc("POST /reset", apiCfg.resetMetricsHandler)
+	mux.HandleFunc("GET /api/healthz", readinessHandler)
+	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
+	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
+	mux.HandleFunc("POST /admin/reset", apiCfg.resetMetricsHandler)
 
 	srv.ListenAndServe()
 }
@@ -35,7 +37,16 @@ func readinessHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) writeNumberOfRequestHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write(fmt.Appendf(nil, "Hits: %v", cfg.fileserverHits.Load()))
+	w.Header().Add("Content-Type", "text/html")
+	htmlString := fmt.Sprintf(`
+<html>
+  <body>
+    <h1>Welcome, Chirpy Admin</h1>
+    <p>Chirpy has been visited %d times!</p>
+  </body>
+</html>
+`, cfg.fileserverHits.Load())
+	w.Write(fmt.Appendf(nil, "%v", htmlString))
 	w.WriteHeader(200)
 }
 
@@ -44,10 +55,54 @@ func (cfg *apiConfig) resetMetricsHandler(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(200)
 }
 
+func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	type reqBody struct {
+		Body string `json:"body"`
+	}
+
+	type resBody struct {
+		Valid bool `json:"valid"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	reqData := reqBody{}
+	err := decoder.Decode(&reqData)
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+		return
+	}
+
+	if len(reqData.Body) > 140 {
+		respondWithError(w, 400, "Chirp is too long")
+		return
+	}
+
+	resLoad := resBody{Valid: true}
+	respondWithJson(w, 200, resLoad)
+}
+
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	cfg.fileserverHits.Add(1)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileserverHits.Add(1)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func respondWithJson(w http.ResponseWriter, code int, payload interface{}) error {
+	resp, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(code)
+	w.Write(resp)
+	return nil
+}
+
+func respondWithError(w http.ResponseWriter, code int, message string) error {
+	return respondWithJson(w, code, map[string]string{"error": message})
 }
