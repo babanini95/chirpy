@@ -62,7 +62,7 @@ func main() {
 	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
 	mux.HandleFunc("POST /api/users", apiCfg.createUser)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
-	mux.HandleFunc("POST /admin/reset", apiCfg.resetMetricsHandler)
+	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
 
 	srv.ListenAndServe()
 }
@@ -81,7 +81,25 @@ func (cfg *apiConfig) writeNumberOfRequestHandler(w http.ResponseWriter, r *http
 	w.WriteHeader(200)
 }
 
-func (cfg *apiConfig) resetMetricsHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
+	err := godotenv.Load()
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+		return
+	}
+
+	isDev := os.Getenv("PLATFORM") == "dev"
+	if !isDev {
+		respondWithError(w, 403, "Forbidden")
+		return
+	}
+
+	err = cfg.queries.ResetUser(r.Context())
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+		return
+	}
+
 	cfg.fileserverHits.Store(0)
 	w.WriteHeader(200)
 }
