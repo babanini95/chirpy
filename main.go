@@ -8,8 +8,10 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/babanini95/chirpy/internal/database"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -17,6 +19,13 @@ import (
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	queries        *database.Queries
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
 }
 
 func main() {
@@ -51,16 +60,11 @@ func main() {
 	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
 	mux.HandleFunc("GET /api/healthz", readinessHandler)
 	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
+	mux.HandleFunc("POST /api/users", apiCfg.createUser)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetMetricsHandler)
 
 	srv.ListenAndServe()
-}
-
-func readinessHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(200)
-	w.Write([]byte("OK"))
 }
 
 func (cfg *apiConfig) writeNumberOfRequestHandler(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +84,45 @@ func (cfg *apiConfig) writeNumberOfRequestHandler(w http.ResponseWriter, r *http
 func (cfg *apiConfig) resetMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
 	w.WriteHeader(200)
+}
+
+func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
+	cfg.fileserverHits.Add(1)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg.fileserverHits.Add(1)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	type reqBody struct {
+		Email string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	reqData := reqBody{}
+	err := decoder.Decode(&reqData)
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+		return
+	}
+
+	user, err := cfg.queries.CreateUser(r.Context(), reqData.Email)
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+		return
+	}
+
+	jsonUser := User{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email,
+	}
+
+	respondWithJson(w, 201, jsonUser)
+
 }
 
 func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
@@ -112,12 +155,10 @@ func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
 	respondWithJson(w, 200, resLoad)
 }
 
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	cfg.fileserverHits.Add(1)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg.fileserverHits.Add(1)
-		next.ServeHTTP(w, r)
-	})
+func readinessHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(200)
+	w.Write([]byte("OK"))
 }
 
 func respondWithJson(w http.ResponseWriter, code int, payload interface{}) error {
