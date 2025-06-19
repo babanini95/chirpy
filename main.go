@@ -68,7 +68,7 @@ func main() {
 	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
 	mux.HandleFunc("GET /api/healthz", readinessHandler)
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
-	mux.HandleFunc("POST /api/chirp", apiCfg.chirpHandler)
+	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpsHandler)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
 
@@ -151,7 +151,7 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 
 }
 
-func (cfg *apiConfig) chirpHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) createChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	type reqBody struct {
 		Body   string    `json:"body"`
