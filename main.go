@@ -69,6 +69,7 @@ func main() {
 
 	mux.HandleFunc("GET /api/healthz", readinessHandler)
 	mux.HandleFunc("GET /api/chirps", apiCfg.getAllChirpsHandler)
+	mux.HandleFunc("GET /api/chirps/{chirpId}", apiCfg.getChirpById)
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
 	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpsHandler)
 
@@ -214,6 +215,28 @@ func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	respondWithJson(w, 200, chirps)
+}
+
+func (cfg *apiConfig) getChirpById(w http.ResponseWriter, r *http.Request) {
+	chirpId, err := uuid.Parse(r.PathValue("chirpId"))
+	if err != nil {
+		respondWithError(w, 404, err.Error())
+		return
+	}
+
+	c, err := cfg.queries.GetChirpById(r.Context(), chirpId)
+	if err != nil {
+		respondWithError(w, 404, err.Error())
+		return
+	}
+	chirp := Chirp{
+		ID:        c.ID,
+		CreatedAt: c.CreatedAt,
+		UpdatedAt: c.UpdatedAt,
+		Body:      c.Body,
+		UserID:    c.UserID,
+	}
+	respondWithJson(w, 200, chirp)
 }
 
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
