@@ -66,9 +66,12 @@ func main() {
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(fileServerHandler))
 	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
+
 	mux.HandleFunc("GET /api/healthz", readinessHandler)
+	mux.HandleFunc("GET /api/chirps", apiCfg.getAllChirpsHandler)
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
 	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpsHandler)
+
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
 
@@ -189,6 +192,28 @@ func (cfg *apiConfig) createChirpsHandler(w http.ResponseWriter, r *http.Request
 		UserID:    c.UserID,
 	}
 	respondWithJson(w, 201, respPayload)
+}
+
+func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	cs, err := cfg.queries.GetChirps(r.Context())
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+		return
+	}
+
+	chirps := make([]Chirp, len(cs))
+	for i, c := range cs {
+		chirps[i] = Chirp{
+			ID:        c.ID,
+			CreatedAt: c.CreatedAt,
+			UpdatedAt: c.UpdatedAt,
+			Body:      c.Body,
+			UserID:    c.UserID,
+		}
+	}
+
+	respondWithJson(w, 200, chirps)
 }
 
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
