@@ -28,6 +28,14 @@ type User struct {
 	Email     string    `json:"email"`
 }
 
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
 func main() {
 	// load .env
 	err := godotenv.Load()
@@ -59,8 +67,8 @@ func main() {
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(fileServerHandler))
 	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
 	mux.HandleFunc("GET /api/healthz", readinessHandler)
-	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
-	mux.HandleFunc("POST /api/users", apiCfg.createUser)
+	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
+	mux.HandleFunc("POST /api/chirp", apiCfg.chirpHandler)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
 
@@ -112,7 +120,7 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	})
 }
 
-func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	type reqBody struct {
 		Email string `json:"email"`
@@ -143,34 +151,44 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) chirpHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	type reqBody struct {
-		Body string `json:"body"`
+		Body   string    `json:"body"`
+		UserId uuid.UUID `json:"user_id"`
 	}
-
-	type resBody struct {
-		CleanedBody string `json:"cleaned_body"`
-	}
-
 	decoder := json.NewDecoder(r.Body)
 	reqData := reqBody{}
 	err := decoder.Decode(&reqData)
+	if err != nil {
+		respondWithError(w, 400, "invalid request body")
+		return
+	}
+
+	if len(reqData.Body) > 140 {
+		respondWithError(w, 400, "chirp is too long")
+		return
+	}
+
+	cleanedBody := censorChirp(reqData.Body, []string{"kerfuffle", "sharbert", "fornax"})
+	params := database.CreateChirpParams{
+		Body:   cleanedBody,
+		UserID: reqData.UserId,
+	}
+	c, err := cfg.queries.CreateChirp(r.Context(), params)
 	if err != nil {
 		respondWithError(w, 500, err.Error())
 		return
 	}
 
-	if len(reqData.Body) > 140 {
-		respondWithError(w, 400, "Chirp is too long")
-		return
+	respPayload := Chirp{
+		ID:        c.ID,
+		CreatedAt: c.CreatedAt,
+		UpdatedAt: c.UpdatedAt,
+		Body:      c.Body,
+		UserID:    c.UserID,
 	}
-
-	profane := []string{"kerfuffle", "sharbert", "fornax"}
-	cleanedBody := censorChirp(reqData.Body, profane)
-
-	resLoad := resBody{CleanedBody: cleanedBody}
-	respondWithJson(w, 200, resLoad)
+	respondWithJson(w, 201, respPayload)
 }
 
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
