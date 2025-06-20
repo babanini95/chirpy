@@ -29,6 +29,11 @@ type User struct {
 	Email     string    `json:"email"`
 }
 
+type authReqBody struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 type Chirp struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
@@ -73,6 +78,7 @@ func main() {
 	mux.HandleFunc("GET /api/chirps/{chirpId}", apiCfg.getChirpById)
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
 	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpsHandler)
+	mux.HandleFunc("POST /api/login", apiCfg.loginHandler)
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
@@ -127,13 +133,8 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 
 func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	type reqBody struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-
 	decoder := json.NewDecoder(r.Body)
-	reqData := reqBody{}
+	reqData := authReqBody{}
 	err := decoder.Decode(&reqData)
 	if err != nil {
 		respondWithError(w, 500, err.Error())
@@ -249,6 +250,37 @@ func (cfg *apiConfig) getChirpById(w http.ResponseWriter, r *http.Request) {
 		UserID:    c.UserID,
 	}
 	respondWithJson(w, 200, chirp)
+}
+
+func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	decoder := json.NewDecoder(r.Body)
+	reqData := authReqBody{}
+	err := decoder.Decode(&reqData)
+	if err != nil {
+		respondWithError(w, 400, err.Error())
+		return
+	}
+
+	user, err := cfg.queries.GetUserByEmail(r.Context(), reqData.Email)
+	if err != nil {
+		respondWithError(w, 401, "Incorrect email or password")
+		return
+	}
+
+	err = auth.CheckPassword(user.HashedPassword, reqData.Password)
+	if err != nil {
+		respondWithError(w, 401, "Incorrect email or password")
+		return
+	}
+
+	respData := User{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email,
+	}
+	respondWithJson(w, 200, respData)
 }
 
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
