@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/babanini95/chirpy/internal/auth"
 	"github.com/babanini95/chirpy/internal/database"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -127,7 +128,8 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	type reqBody struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -138,7 +140,17 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	user, err := cfg.queries.CreateUser(r.Context(), reqData.Email)
+	hashedPassword, err := auth.HashPassword(reqData.Password)
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+		return
+	}
+
+	params := database.CreateUserParams{
+		Email:          reqData.Email,
+		HashedPassword: hashedPassword,
+	}
+	user, err := cfg.queries.CreateUser(r.Context(), params)
 	if err != nil {
 		respondWithError(w, 500, err.Error())
 		return
