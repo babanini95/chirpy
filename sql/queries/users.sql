@@ -11,3 +11,8 @@ RETURNING *;
 
 -- name: ResetUser :exec
 TRUNCATE TABLE users;
+
+-- name: GetUserByEmail :one
+SELECT *
+FROM users
+WHERE email = $1;
