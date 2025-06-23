@@ -81,6 +81,7 @@ func main() {
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
 	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpsHandler)
 	mux.HandleFunc("POST /api/login", apiCfg.loginHandler)
+	mux.HandleFunc("POST /api/refresh", apiCfg.refreshTokenHandler)
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
@@ -316,6 +317,38 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: refreshToken,
 	}
 	respondWithJson(w, 200, respData)
+}
+
+func (cfg *apiConfig) refreshTokenHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, err.Error())
+		return
+	}
+	tokenDb, err := cfg.queries.GetUserFromRefreshTokens(r.Context(), token)
+	if err != nil {
+		respondWithError(w, 401, "invalid refresh token")
+		return
+	}
+
+	if tokenDb.ExpiresAt.Before(time.Now()) {
+		respondWithError(w, 401, "refresh token expired")
+		return
+	}
+
+	// make jwt
+	jwt, err := auth.MakeJWT(tokenDb.UserID, os.Getenv("SECRET_KEY"), time.Hour)
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+	}
+
+	type respData struct {
+		Token string `json:"token"`
+	}
+
+	respBody := respData{Token: jwt}
+	respondWithJson(w, 200, respBody)
 }
 
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
