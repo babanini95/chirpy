@@ -27,11 +27,13 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token"`
 }
 
 type authReqBody struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email            string `json:"email"`
+	Password         string `json:"password"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
 }
 
 type Chirp struct {
@@ -170,13 +172,24 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 
 func (cfg *apiConfig) createChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 400, err.Error())
+		return
+	}
+	userId, err := auth.ValidateJWT(token, os.Getenv("SECRET_KEY"))
+	if err != nil {
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
 	type reqBody struct {
-		Body   string    `json:"body"`
-		UserId uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	reqData := reqBody{}
-	err := decoder.Decode(&reqData)
+	err = decoder.Decode(&reqData)
 	if err != nil {
 		respondWithError(w, 400, "invalid request body")
 		return
@@ -190,7 +203,7 @@ func (cfg *apiConfig) createChirpsHandler(w http.ResponseWriter, r *http.Request
 	cleanedBody := censorChirp(reqData.Body, []string{"kerfuffle", "sharbert", "fornax"})
 	params := database.CreateChirpParams{
 		Body:   cleanedBody,
-		UserID: reqData.UserId,
+		UserID: userId,
 	}
 	c, err := cfg.queries.CreateChirp(r.Context(), params)
 	if err != nil {
@@ -274,11 +287,23 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	expiredDuration := time.Hour
+	if reqData.ExpiresInSeconds != 0 && reqData.ExpiresInSeconds < 3600 {
+		expiredDuration = time.Duration(reqData.ExpiresInSeconds) * time.Second
+	}
+
+	token, err := auth.MakeJWT(user.ID, os.Getenv("SECRET_KEY"), expiredDuration)
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+		return
+	}
+
 	respData := User{
 		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email:     user.Email,
+		Token:     token,
 	}
 	respondWithJson(w, 200, respData)
 }
