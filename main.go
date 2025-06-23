@@ -23,17 +23,17 @@ type apiConfig struct {
 }
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token"`
+	ID           uuid.UUID `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Email        string    `json:"email"`
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token"`
 }
 
 type authReqBody struct {
-	Email            string `json:"email"`
-	Password         string `json:"password"`
-	ExpiresInSeconds int    `json:"expires_in_seconds"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 type Chirp struct {
@@ -287,23 +287,33 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expiredDuration := time.Hour
-	if reqData.ExpiresInSeconds != 0 && reqData.ExpiresInSeconds < 3600 {
-		expiredDuration = time.Duration(reqData.ExpiresInSeconds) * time.Second
+	refreshTokenExpAt := time.Now().AddDate(0, 0, 60)
+	refreshToken, _ := auth.MakeRefreshToken()
+	saveRefreshTokenParams := database.SaveRefreshTokenParams{
+		Token:     refreshToken,
+		UserID:    user.ID,
+		ExpiresAt: refreshTokenExpAt,
+	}
+	_, err = cfg.queries.SaveRefreshToken(r.Context(), saveRefreshTokenParams)
+	if err != nil {
+		respondWithError(w, 500, "Can not save refresh token")
+		return
 	}
 
-	token, err := auth.MakeJWT(user.ID, os.Getenv("SECRET_KEY"), expiredDuration)
+	accessTokenExpDuration := time.Hour
+	token, err := auth.MakeJWT(user.ID, os.Getenv("SECRET_KEY"), accessTokenExpDuration)
 	if err != nil {
 		respondWithError(w, 500, err.Error())
 		return
 	}
 
 	respData := User{
-		ID:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email,
-		Token:     token,
+		ID:           user.ID,
+		CreatedAt:    user.CreatedAt,
+		UpdatedAt:    user.UpdatedAt,
+		Email:        user.Email,
+		Token:        token,
+		RefreshToken: refreshToken,
 	}
 	respondWithJson(w, 200, respData)
 }
