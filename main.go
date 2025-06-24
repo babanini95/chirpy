@@ -82,6 +82,7 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpsHandler)
 	mux.HandleFunc("POST /api/login", apiCfg.loginHandler)
 	mux.HandleFunc("POST /api/refresh", apiCfg.refreshTokenHandler)
+	mux.HandleFunc("POST /api/revoke", apiCfg.revokeAccessTokenHandler)
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
@@ -349,6 +350,23 @@ func (cfg *apiConfig) refreshTokenHandler(w http.ResponseWriter, r *http.Request
 
 	respBody := respData{Token: jwt}
 	respondWithJson(w, 200, respBody)
+}
+
+func (cfg *apiConfig) revokeAccessTokenHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	err = cfg.queries.RevokeRefreshToken(r.Context(), token)
+	if err != nil {
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	w.WriteHeader(204)
 }
 
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
