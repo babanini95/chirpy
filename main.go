@@ -84,6 +84,7 @@ func main() {
 	mux.HandleFunc("POST /api/refresh", apiCfg.refreshTokenHandler)
 	mux.HandleFunc("POST /api/revoke", apiCfg.revokeAccessTokenHandler)
 	mux.HandleFunc("PUT /api/users", apiCfg.updateEmailAndPasswordHandler)
+	mux.HandleFunc("DELETE /api/chirps/{chirpId}", apiCfg.deleteChirpHandler)
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
@@ -423,6 +424,42 @@ func (cfg *apiConfig) updateEmailAndPasswordHandler(w http.ResponseWriter, r *ht
 		Email:     updatedUser.Email,
 	}
 	respondWithJson(w, 200, respBody)
+}
+
+func (cfg *apiConfig) deleteChirpHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 403, err.Error())
+		return
+	}
+	userId, err := auth.ValidateJWT(token, os.Getenv("SECRET_KEY"))
+	if err != nil {
+		respondWithError(w, 403, err.Error())
+		return
+	}
+
+	chirpId, err := uuid.Parse(r.PathValue("chirpId"))
+	if err != nil {
+		respondWithError(w, 404, err.Error())
+		return
+	}
+
+	chirp, err := cfg.queries.GetChirpById(r.Context(), chirpId)
+	if err != nil {
+		respondWithError(w, 404, err.Error())
+		return
+	}
+	if chirp.UserID != userId {
+		respondWithError(w, 403, "can't delete others chirp")
+		return
+	}
+
+	err = cfg.queries.DeleteChirpById(r.Context(), chirpId)
+	if err != nil {
+		respondWithError(w, 500, err.Error())
+	}
+	w.WriteHeader(204)
 }
 
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
