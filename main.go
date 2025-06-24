@@ -83,6 +83,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", apiCfg.loginHandler)
 	mux.HandleFunc("POST /api/refresh", apiCfg.refreshTokenHandler)
 	mux.HandleFunc("POST /api/revoke", apiCfg.revokeAccessTokenHandler)
+	mux.HandleFunc("PUT /api/users", apiCfg.updateEmailAndPasswordHandler)
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.writeNumberOfRequestHandler)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetHandler)
@@ -367,6 +368,61 @@ func (cfg *apiConfig) revokeAccessTokenHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	w.WriteHeader(204)
+}
+
+func (cfg *apiConfig) updateEmailAndPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, err.Error())
+		return
+	}
+	userId, err := auth.ValidateJWT(accessToken, os.Getenv("SECRET_KEY"))
+	if err != nil {
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	reqBody := authReqBody{}
+	decoder := json.NewDecoder(r.Body)
+	err = decoder.Decode(&reqBody)
+	if err != nil {
+		respondWithError(w, 400, err.Error())
+		return
+	}
+
+	user, _ := cfg.queries.GetUserByEmail(r.Context(), reqBody.Email)
+	if userId != user.ID {
+		respondWithError(w, 401, "can not update others")
+		return
+	}
+
+	hashPwd, err := auth.HashPassword(reqBody.Password)
+	if err != nil {
+		respondWithError(w, 400, err.Error())
+		return
+	}
+
+	updatedUser, err := cfg.queries.UpdateEmailAndPassword(
+		r.Context(),
+		database.UpdateEmailAndPasswordParams{
+			Email:          reqBody.Email,
+			HashedPassword: hashPwd,
+			ID:             userId,
+		},
+	)
+	if err != nil {
+		respondWithError(w, 401, err.Error())
+		return
+	}
+
+	respBody := User{
+		ID:        userId,
+		CreatedAt: updatedUser.CreatedAt,
+		UpdatedAt: updatedUser.UpdatedAt,
+		Email:     updatedUser.Email,
+	}
+	respondWithJson(w, 200, respBody)
 }
 
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
