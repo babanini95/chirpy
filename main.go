@@ -29,6 +29,7 @@ type User struct {
 	Email        string    `json:"email"`
 	Token        string    `json:"token"`
 	RefreshToken string    `json:"refresh_token"`
+	IsChirpyRed  bool      `json:"is_chirpy_red"`
 }
 
 type authReqBody struct {
@@ -83,6 +84,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", apiCfg.loginHandler)
 	mux.HandleFunc("POST /api/refresh", apiCfg.refreshTokenHandler)
 	mux.HandleFunc("POST /api/revoke", apiCfg.revokeAccessTokenHandler)
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.polkaWebhookHandler)
 	mux.HandleFunc("PUT /api/users", apiCfg.updateEmailAndPasswordHandler)
 	mux.HandleFunc("DELETE /api/chirps/{chirpId}", apiCfg.deleteChirpHandler)
 
@@ -164,10 +166,11 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	jsonUser := User{
-		ID:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email,
+		ID:          user.ID,
+		CreatedAt:   user.CreatedAt,
+		UpdatedAt:   user.UpdatedAt,
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	}
 
 	respondWithJson(w, 201, jsonUser)
@@ -318,6 +321,7 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		Email:        user.Email,
 		Token:        token,
 		RefreshToken: refreshToken,
+		IsChirpyRed:  user.IsChirpyRed,
 	}
 	respondWithJson(w, 200, respData)
 }
@@ -418,10 +422,11 @@ func (cfg *apiConfig) updateEmailAndPasswordHandler(w http.ResponseWriter, r *ht
 	}
 
 	respBody := User{
-		ID:        userId,
-		CreatedAt: updatedUser.CreatedAt,
-		UpdatedAt: updatedUser.UpdatedAt,
-		Email:     updatedUser.Email,
+		ID:          userId,
+		CreatedAt:   updatedUser.CreatedAt,
+		UpdatedAt:   updatedUser.UpdatedAt,
+		Email:       updatedUser.Email,
+		IsChirpyRed: updatedUser.IsChirpyRed,
 	}
 	respondWithJson(w, 200, respBody)
 }
@@ -459,6 +464,37 @@ func (cfg *apiConfig) deleteChirpHandler(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		respondWithError(w, 500, err.Error())
 	}
+	w.WriteHeader(204)
+}
+
+func (cfg *apiConfig) polkaWebhookHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	type reqBody struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID uuid.UUID `json:"user_id"`
+		} `json:"data"`
+	}
+
+	reqData := reqBody{}
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&reqData)
+	if err != nil {
+		respondWithError(w, 400, err.Error())
+		return
+	}
+
+	if reqData.Event != "user.upgraded" {
+		w.WriteHeader(204)
+		return
+	}
+
+	_, err = cfg.queries.UpgradeUserById(r.Context(), reqData.Data.UserID)
+	if err != nil {
+		respondWithError(w, 404, err.Error())
+		return
+	}
+
 	w.WriteHeader(204)
 }
 
