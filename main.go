@@ -20,6 +20,7 @@ import (
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	queries        *database.Queries
+	polkaApiKey    string
 }
 
 type User struct {
@@ -69,7 +70,8 @@ func main() {
 	}
 	// store generated queries in apiCfg
 	apiCfg := &apiConfig{
-		queries: dbQueries,
+		queries:     dbQueries,
+		polkaApiKey: os.Getenv("POLKA_KEY"),
 	}
 	fileServerHandler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
 
@@ -481,6 +483,16 @@ func (cfg *apiConfig) polkaWebhookHandler(w http.ResponseWriter, r *http.Request
 	err := decoder.Decode(&reqData)
 	if err != nil {
 		respondWithError(w, 400, err.Error())
+		return
+	}
+
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		respondWithError(w, 400, err.Error())
+		return
+	}
+	if apiKey != os.Getenv("POLKA_KEY") {
+		w.WriteHeader(401)
 		return
 	}
 
