@@ -79,7 +79,7 @@ func main() {
 	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
 
 	mux.HandleFunc("GET /api/healthz", readinessHandler)
-	mux.HandleFunc("GET /api/chirps", apiCfg.getAllChirpsHandler)
+	mux.HandleFunc("GET /api/chirps", apiCfg.getChirpsHandler)
 	mux.HandleFunc("GET /api/chirps/{chirpId}", apiCfg.getChirpById)
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
 	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpsHandler)
@@ -230,9 +230,23 @@ func (cfg *apiConfig) createChirpsHandler(w http.ResponseWriter, r *http.Request
 	respondWithJson(w, 201, respPayload)
 }
 
-func (cfg *apiConfig) getAllChirpsHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	cs, err := cfg.queries.GetChirps(r.Context())
+	var cs []database.Chirp
+	var err error
+	var userId uuid.UUID
+
+	queryParams := r.URL.Query().Get("author_id")
+	if queryParams != "" {
+		userId, err = uuid.Parse(queryParams)
+		if err != nil {
+			respondWithError(w, 400, err.Error())
+			return
+		}
+		cs, err = cfg.queries.GetChirpsByUser(r.Context(), userId)
+	} else {
+		cs, err = cfg.queries.GetChirps(r.Context())
+	}
 	if err != nil {
 		respondWithError(w, 500, err.Error())
 		return
