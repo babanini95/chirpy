@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -236,9 +237,9 @@ func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var userId uuid.UUID
 
-	queryParams := r.URL.Query().Get("author_id")
-	if queryParams != "" {
-		userId, err = uuid.Parse(queryParams)
+	authorQuery := r.URL.Query().Get("author_id")
+	if authorQuery != "" {
+		userId, err = uuid.Parse(authorQuery)
 		if err != nil {
 			respondWithError(w, 400, err.Error())
 			return
@@ -261,6 +262,12 @@ func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
 			Body:      c.Body,
 			UserID:    c.UserID,
 		}
+	}
+
+	if sortQuery := r.URL.Query().Get("sort"); sortQuery == "desc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+		})
 	}
 
 	respondWithJson(w, 200, chirps)
